@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
@@ -6,6 +7,100 @@ import '../../utils/string_extension.dart';
 import '../../utils/time_format_utils.dart';
 
 const Uuid uuid = Uuid();
+
+class CustomAttendanceConfig {
+  final bool isEnabled;
+  final double baselinePercentage;
+  final double presentAdjustment;
+  final double absentAdjustment;
+  final double cancelledAdjustment;
+  final double plannedAbsentAdjustment;
+  final DateTime effectiveFrom;
+
+  const CustomAttendanceConfig({
+    this.isEnabled = false,
+    this.baselinePercentage = 0.0,
+    this.presentAdjustment = 0.0,
+    this.absentAdjustment = 0.0,
+    this.cancelledAdjustment = 0.0,
+    this.plannedAbsentAdjustment = 0.0,
+    required this.effectiveFrom,
+  });
+
+  factory CustomAttendanceConfig.fromJson(Map<String, dynamic> json) {
+    DateTime parsedEffectiveFrom;
+    if (json['effectiveFrom'] != null) {
+      parsedEffectiveFrom = DateTime.tryParse(json['effectiveFrom'] as String) ?? DateTime.now();
+    } else {
+      parsedEffectiveFrom = DateTime.now();
+    }
+    return CustomAttendanceConfig(
+      isEnabled: json['isEnabled'] as bool? ?? false,
+      baselinePercentage: (json['baselinePercentage'] as num?)?.toDouble() ?? 0.0,
+      presentAdjustment: (json['presentAdjustment'] as num?)?.toDouble() ?? 0.0,
+      absentAdjustment: (json['absentAdjustment'] as num?)?.toDouble() ?? 0.0,
+      cancelledAdjustment: (json['cancelledAdjustment'] as num?)?.toDouble() ?? 0.0,
+      plannedAbsentAdjustment: (json['plannedAbsentAdjustment'] as num?)?.toDouble() ?? 0.0,
+      effectiveFrom: normalizeDate(parsedEffectiveFrom) ?? parsedEffectiveFrom,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'isEnabled': isEnabled,
+        'baselinePercentage': baselinePercentage,
+        'presentAdjustment': presentAdjustment,
+        'absentAdjustment': absentAdjustment,
+        'cancelledAdjustment': cancelledAdjustment,
+        'plannedAbsentAdjustment': plannedAbsentAdjustment,
+        'effectiveFrom': (normalizeDate(effectiveFrom) ?? effectiveFrom).toIso8601String(),
+      };
+
+  CustomAttendanceConfig copyWith({
+    bool? isEnabled,
+    double? baselinePercentage,
+    double? presentAdjustment,
+    double? absentAdjustment,
+    double? cancelledAdjustment,
+    double? plannedAbsentAdjustment,
+    DateTime? effectiveFrom,
+  }) {
+    return CustomAttendanceConfig(
+      isEnabled: isEnabled ?? this.isEnabled,
+      baselinePercentage: baselinePercentage ?? this.baselinePercentage,
+      presentAdjustment: presentAdjustment ?? this.presentAdjustment,
+      absentAdjustment: absentAdjustment ?? this.absentAdjustment,
+      cancelledAdjustment: cancelledAdjustment ?? this.cancelledAdjustment,
+      plannedAbsentAdjustment: plannedAbsentAdjustment ?? this.plannedAbsentAdjustment,
+      effectiveFrom: effectiveFrom ?? this.effectiveFrom,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CustomAttendanceConfig &&
+          runtimeType == other.runtimeType &&
+          isEnabled == other.isEnabled &&
+          baselinePercentage == other.baselinePercentage &&
+          presentAdjustment == other.presentAdjustment &&
+          absentAdjustment == other.absentAdjustment &&
+          cancelledAdjustment == other.cancelledAdjustment &&
+          plannedAbsentAdjustment == other.plannedAbsentAdjustment &&
+          isSameDay(effectiveFrom, other.effectiveFrom);
+
+  @override
+  int get hashCode => Object.hash(
+        isEnabled,
+        baselinePercentage,
+        presentAdjustment,
+        absentAdjustment,
+        cancelledAdjustment,
+        plannedAbsentAdjustment,
+        effectiveFrom.year,
+        effectiveFrom.month,
+        effectiveFrom.day,
+      );
+}
 
 class Subject {
   final String id;
@@ -18,6 +113,7 @@ class Subject {
   final String? locationId;
   final String? room;
   final String? block;
+  final CustomAttendanceConfig? customAttendanceConfig;
 
   Subject({
     String? id,
@@ -30,9 +126,25 @@ class Subject {
     this.locationId,
     this.room,
     this.block,
+    this.customAttendanceConfig,
   }) : id = id ?? uuid.v4();
 
   factory Subject.fromJson(Map<String, dynamic> json) {
+    CustomAttendanceConfig? customConfig;
+    if (json['customAttendanceConfig'] != null) {
+      if (json['customAttendanceConfig'] is Map<String, dynamic>) {
+        customConfig = CustomAttendanceConfig.fromJson(
+            json['customAttendanceConfig'] as Map<String, dynamic>);
+      } else if (json['customAttendanceConfig'] is String &&
+          (json['customAttendanceConfig'] as String).isNotEmpty) {
+        try {
+          customConfig = CustomAttendanceConfig.fromJson(
+              jsonDecode(json['customAttendanceConfig'] as String)
+                  as Map<String, dynamic>);
+        } catch (_) {}
+      }
+    }
+
     return Subject(
       id: json['id'] as String? ?? uuid.v4(),
       name: json['name'] as String,
@@ -48,6 +160,7 @@ class Subject {
       locationId: json['locationId'] as String?,
       room: json['room'] as String?,
       block: json['block'] as String?,
+      customAttendanceConfig: customConfig,
     );
   }
 
@@ -62,6 +175,8 @@ class Subject {
         'locationId': locationId,
         'room': room,
         'block': block,
+        if (customAttendanceConfig != null)
+          'customAttendanceConfig': customAttendanceConfig!.toJson(),
       };
 
   Subject copyWith({
@@ -75,6 +190,7 @@ class Subject {
     String? Function()? locationId,
     String? Function()? room,
     String? Function()? block,
+    CustomAttendanceConfig? Function()? customAttendanceConfig,
   }) {
     return Subject(
       id: id ?? this.id,
@@ -87,6 +203,9 @@ class Subject {
       locationId: locationId != null ? locationId() : this.locationId,
       room: room != null ? room() : this.room,
       block: block != null ? block() : this.block,
+      customAttendanceConfig: customAttendanceConfig != null
+          ? customAttendanceConfig()
+          : this.customAttendanceConfig,
     );
   }
 

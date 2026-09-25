@@ -1,0 +1,6 @@
+{
+  "name": "AttendMate",
+  "description": "Timetable & Attendance Tracker with Bunk Calculator and Custom Attendance Logic",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

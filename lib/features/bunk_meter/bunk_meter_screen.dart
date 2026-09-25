@@ -337,8 +337,21 @@ class _BunkMeterScreenState extends State<BunkMeterScreen> {
                     final attendedClasses = snapshot.attendedClasses;
                     final absentClasses = snapshot.absentClasses;
                     final markedClasses = snapshot.markedClasses;
-                    final currentPercentage =
-                        (markedClasses == 0) ? 100.0 : (attendedClasses / markedClasses) * 100;
+
+                    final isCustomMode = subject.customAttendanceConfig != null &&
+                        subject.customAttendanceConfig!.isEnabled;
+                    final customConfig = subject.customAttendanceConfig;
+
+                    final double currentPercentage;
+                    if (isCustomMode && customConfig != null) {
+                      currentPercentage = AttendanceMath.calculateCustomAttendancePercentage(
+                        config: customConfig,
+                        records: attendanceProvider.attendanceRecords.where((r) => r.subjectId == subject.id),
+                      );
+                    } else {
+                      currentPercentage =
+                          (markedClasses == 0) ? 100.0 : (attendedClasses / markedClasses) * 100;
+                    }
 
                     // Calculate future bunking ability or required attendance
                     String message;
@@ -349,6 +362,48 @@ class _BunkMeterScreenState extends State<BunkMeterScreen> {
                       message = 'No classes scheduled for this subject in the semester.';
                       compactStatus = 'No classes scheduled for this subject in the semester.';
                       messageColor = Colors.grey;
+                    } else if (isCustomMode && customConfig != null) {
+                      final double targetPercentage = subject.targetAttendance.toDouble();
+                      int futureScheduled = snapshot.totalClassesInWindow - snapshot.scheduledSoFarInWindow;
+                      if (futureScheduled < 0) {
+                        futureScheduled = 0;
+                      }
+
+                      if (currentPercentage >= targetPercentage) {
+                        final maxBunkable = AttendanceMath.calculateCustomBunkableClasses(
+                          currentPercentage: currentPercentage,
+                          absentAdjustment: customConfig.absentAdjustment,
+                          targetPercentage: targetPercentage,
+                        );
+                        final bunkable = (customConfig.absentAdjustment >= 0)
+                            ? futureScheduled
+                            : maxBunkable.clamp(0, futureScheduled);
+
+                        if (bunkable == 0) {
+                          message = 'You currently cannot bunk anymore classes';
+                          compactStatus = 'Can\'t bunk';
+                        } else {
+                          message = 'You can bunk next $bunkable classes continuously';
+                          compactStatus = 'Bunkable: $bunkable';
+                        }
+                        messageColor = Colors.green.shade700;
+                      } else {
+                        final neededClasses = AttendanceMath.calculateCustomClassesNeededToReachTarget(
+                          currentPercentage: currentPercentage,
+                          presentAdjustment: customConfig.presentAdjustment,
+                          targetPercentage: targetPercentage,
+                        );
+
+                        if (neededClasses != -1 && neededClasses <= futureScheduled) {
+                          message = 'Must attend next $neededClasses classes';
+                          compactStatus = 'Must attend: $neededClasses';
+                          messageColor = Colors.orange.shade700;
+                        } else {
+                          message = 'Target unreachable with remaining classes';
+                          compactStatus = 'Can\'t reach target';
+                          messageColor = Colors.red.shade700;
+                        }
+                      }
                     } else {
                       final currentRatio = (markedClasses == 0)
                           ? 1.0
@@ -974,6 +1029,31 @@ class _BunkMeterSubjectCardState extends State<_BunkMeterSubjectCard>
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
+                                if (subject.customAttendanceConfig != null &&
+                                    subject.customAttendanceConfig!.isEnabled) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: Colors.blue.withValues(alpha: 0.4)),
+                                    ),
+                                    child: Tooltip(
+                                      message: 'Custom Attendance Logic: Base ${subject.customAttendanceConfig!.baselinePercentage.toStringAsFixed(1)}%, '
+                                          'Present ${subject.customAttendanceConfig!.presentAdjustment >= 0 ? '+' : ''}${subject.customAttendanceConfig!.presentAdjustment}, '
+                                          'Absent ${subject.customAttendanceConfig!.absentAdjustment >= 0 ? '+' : ''}${subject.customAttendanceConfig!.absentAdjustment}',
+                                      child: Text(
+                                        'Custom Mode',
+                                        style: TextStyle(
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.blue.shade700,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                                 if (snapshot.manualOverride != null) ...[
                                   const SizedBox(width: 6),
                                   InkWell(

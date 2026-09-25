@@ -318,6 +318,23 @@ class TimetableImportUtils {
 
     final targetAttendance = subjectData['targetAttendance'] as int? ?? 75;
 
+    CustomAttendanceConfig? customConfig;
+    if (subjectData['customAttendanceConfig'] != null) {
+      if (subjectData['customAttendanceConfig'] is Map<String, dynamic>) {
+        try {
+          customConfig = CustomAttendanceConfig.fromJson(
+              subjectData['customAttendanceConfig'] as Map<String, dynamic>);
+        } catch (_) {}
+      } else if (subjectData['customAttendanceConfig'] is String &&
+          (subjectData['customAttendanceConfig'] as String).isNotEmpty) {
+        try {
+          customConfig = CustomAttendanceConfig.fromJson(
+              jsonDecode(subjectData['customAttendanceConfig'] as String)
+                  as Map<String, dynamic>);
+        } catch (_) {}
+      }
+    }
+
     return Subject(
       name: name.trim(),
       acronym: (acronym?.trim().isEmpty ?? true) ? null : acronym?.trim(),
@@ -327,6 +344,7 @@ class TimetableImportUtils {
       locationId: subjectData['locationId'] as String?,
       room: subjectData['room'] as String?,
       block: subjectData['block'] as String?,
+      customAttendanceConfig: customConfig,
     );
   }
 

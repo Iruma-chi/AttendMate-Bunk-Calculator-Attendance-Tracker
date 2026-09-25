@@ -46,6 +46,15 @@ class _AddSubjectScreenState extends State<AddSubjectScreen> {
   LocationConfig? _selectedLocation;
   bool _loadingLocations = true;
 
+  // ── Custom Attendance Logic State ──────────────────────────────────────────
+  bool _customAttendanceEnabled = false;
+  final _baselineAttendanceController = TextEditingController(text: '0.0');
+  final _presentAdjustmentController = TextEditingController(text: '0.0');
+  final _absentAdjustmentController = TextEditingController(text: '0.0');
+  final _cancelledAdjustmentController = TextEditingController(text: '0.0');
+  final _plannedAbsentAdjustmentController = TextEditingController(text: '0.0');
+  DateTime _effectiveFromDate = DateTime.now();
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +64,7 @@ class _AddSubjectScreenState extends State<AddSubjectScreen> {
     final semesterProvider = Provider.of<SemesterProvider>(context, listen: false);
     if (semesterProvider.semester != null) {
       _targetAttendance = semesterProvider.semester!.targetPercentage.round();
+      _effectiveFromDate = semesterProvider.semester!.startDate;
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -91,6 +101,11 @@ class _AddSubjectScreenState extends State<AddSubjectScreen> {
     } catch (_) {}
     _nameController.dispose();
     _acronymController.dispose();
+    _baselineAttendanceController.dispose();
+    _presentAdjustmentController.dispose();
+    _absentAdjustmentController.dispose();
+    _cancelledAdjustmentController.dispose();
+    _plannedAbsentAdjustmentController.dispose();
     super.dispose();
   }
 
@@ -932,6 +947,26 @@ class _AddSubjectScreenState extends State<AddSubjectScreen> {
     }
 
     _sortSchedule();
+
+    CustomAttendanceConfig? customConfig;
+    if (_customAttendanceEnabled) {
+      final baseline = double.tryParse(_baselineAttendanceController.text.trim()) ?? 0.0;
+      final present = double.tryParse(_presentAdjustmentController.text.trim()) ?? 0.0;
+      final absent = double.tryParse(_absentAdjustmentController.text.trim()) ?? 0.0;
+      final cancelled = double.tryParse(_cancelledAdjustmentController.text.trim()) ?? 0.0;
+      final plannedAbsent = double.tryParse(_plannedAbsentAdjustmentController.text.trim()) ?? 0.0;
+
+      customConfig = CustomAttendanceConfig(
+        isEnabled: true,
+        baselinePercentage: baseline.clamp(0.0, 100.0),
+        presentAdjustment: present,
+        absentAdjustment: absent,
+        cancelledAdjustment: cancelled,
+        plannedAbsentAdjustment: plannedAbsent,
+        effectiveFrom: normalizeDate(_effectiveFromDate) ?? _effectiveFromDate,
+      );
+    }
+
     Provider.of<SubjectProvider>(context, listen: false).addSubject(
       Subject(
         name: name,
@@ -942,6 +977,7 @@ class _AddSubjectScreenState extends State<AddSubjectScreen> {
         locationId: _selectedLocation?.id,
         room: _selectedLocation?.name,
         block: _selectedLocation?.block,
+        customAttendanceConfig: customConfig,
       ),
     );
 
@@ -1140,6 +1176,10 @@ class _AddSubjectScreenState extends State<AddSubjectScreen> {
                     ],
                   ),
                 ),
+
+                const SizedBox(height: 16),
+
+                _buildCustomAttendanceSection(context, colorScheme),
 
                 const SizedBox(height: 16),
 
@@ -1566,6 +1606,256 @@ class _AddSubjectScreenState extends State<AddSubjectScreen> {
             const SizedBox(width: 8),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCustomAttendanceSection(BuildContext context, ColorScheme colorScheme) {
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _customAttendanceEnabled
+              ? colorScheme.primary.withValues(alpha: 0.5)
+              : colorScheme.outlineVariant.withValues(alpha: 0.5),
+          width: _customAttendanceEnabled ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SwitchListTile(
+            title: const Text(
+              'Custom Attendance Logic',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+            ),
+            subtitle: Text(
+              'Percentage-point adjustment model based on baseline & daily attendance',
+              style: TextStyle(
+                fontSize: 12,
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+              ),
+            ),
+            secondary: Icon(
+              Icons.tune_rounded,
+              color: _customAttendanceEnabled ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.4),
+            ),
+            value: _customAttendanceEnabled,
+            onChanged: (val) {
+              setState(() {
+                _customAttendanceEnabled = val;
+              });
+            },
+          ),
+          if (_customAttendanceEnabled) ...[
+            Divider(height: 1, color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: colorScheme.primary.withValues(alpha: 0.25)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 18, color: colorScheme.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Final attendance = Baseline + Σ(record adjustments) for records on or after effective date.',
+                            style: TextStyle(fontSize: 11.5, color: colorScheme.primary),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Baseline attendance
+                  TextFormField(
+                    controller: _baselineAttendanceController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: 'Baseline attendance',
+                      suffixText: '%',
+                      helperText: 'Starting attendance percentage as of effective date (0.0 to 100.0)',
+                      filled: true,
+                      fillColor: colorScheme.surface,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    validator: (val) {
+                      if (!_customAttendanceEnabled) return null;
+                      if (val == null || val.trim().isEmpty) return 'Enter baseline attendance';
+                      final num = double.tryParse(val.trim());
+                      if (num == null || num.isNaN || num.isInfinite) return 'Enter a valid number';
+                      if (num < 0 || num > 100) return 'Must be between 0.0 and 100.0';
+                      return null;
+                    },
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Effective from date picker
+                  InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: _effectiveFromDate,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) {
+                        setState(() {
+                          _effectiveFromDate = picked;
+                        });
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.7)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.calendar_today_outlined, size: 20, color: colorScheme.primary),
+                          const SizedBox(width: 12),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Effective from',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                DateFormat('dd MMM yyyy').format(_effectiveFromDate),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
+                            ],
+                          ),
+                          const Spacer(),
+                          Text(
+                            'Change',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: colorScheme.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Present adjustment
+                  TextFormField(
+                    controller: _presentAdjustmentController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                    decoration: InputDecoration(
+                      labelText: 'Present adjustment',
+                      suffixText: 'percentage points',
+                      helperText: 'Points added when marked Present (e.g. +0.6)',
+                      filled: true,
+                      fillColor: colorScheme.surface,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    validator: (val) {
+                      if (!_customAttendanceEnabled) return null;
+                      if (val == null || val.trim().isEmpty) return 'Enter present adjustment';
+                      final num = double.tryParse(val.trim());
+                      if (num == null || num.isNaN || num.isInfinite) return 'Enter a valid number';
+                      return null;
+                    },
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Absent adjustment
+                  TextFormField(
+                    controller: _absentAdjustmentController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                    decoration: InputDecoration(
+                      labelText: 'Absent adjustment',
+                      suffixText: 'percentage points',
+                      helperText: 'Points adjusted when marked Absent (e.g. -4.0)',
+                      filled: true,
+                      fillColor: colorScheme.surface,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    validator: (val) {
+                      if (!_customAttendanceEnabled) return null;
+                      if (val == null || val.trim().isEmpty) return 'Enter absent adjustment';
+                      final num = double.tryParse(val.trim());
+                      if (num == null || num.isNaN || num.isInfinite) return 'Enter a valid number';
+                      return null;
+                    },
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Cancelled adjustment
+                  TextFormField(
+                    controller: _cancelledAdjustmentController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                    decoration: InputDecoration(
+                      labelText: 'Cancelled adjustment',
+                      suffixText: 'percentage points',
+                      helperText: 'Points adjusted when class is Cancelled (default 0.0)',
+                      filled: true,
+                      fillColor: colorScheme.surface,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    validator: (val) {
+                      if (!_customAttendanceEnabled) return null;
+                      if (val == null || val.trim().isEmpty) return 'Enter cancelled adjustment';
+                      final num = double.tryParse(val.trim());
+                      if (num == null || num.isNaN || num.isInfinite) return 'Enter a valid number';
+                      return null;
+                    },
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Planned Absent adjustment
+                  TextFormField(
+                    controller: _plannedAbsentAdjustmentController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                    decoration: InputDecoration(
+                      labelText: 'Planned Absent adjustment',
+                      suffixText: 'percentage points',
+                      helperText: 'Points adjusted for Planned Absent (default 0.0)',
+                      filled: true,
+                      fillColor: colorScheme.surface,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    validator: (val) {
+                      if (!_customAttendanceEnabled) return null;
+                      if (val == null || val.trim().isEmpty) return 'Enter planned absent adjustment';
+                      final num = double.tryParse(val.trim());
+                      if (num == null || num.isNaN || num.isInfinite) return 'Enter a valid number';
+                      return null;
+                    },
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

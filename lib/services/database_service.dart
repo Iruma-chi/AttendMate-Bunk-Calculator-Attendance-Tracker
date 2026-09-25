@@ -28,7 +28,7 @@ class DatabaseService {
 
       _database = await openDatabase(
         path,
-        version: 8,
+        version: 9,
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
       );
@@ -65,7 +65,8 @@ class DatabaseService {
           attendanceRecords TEXT NOT NULL,
           locationId TEXT,
           room TEXT,
-          block TEXT
+          block TEXT,
+          customAttendanceConfig TEXT
         )
       ''');
 
@@ -234,6 +235,14 @@ class DatabaseService {
           await db.execute('ALTER TABLE subjects ADD COLUMN block TEXT');
         }
       }
+      if (oldVersion < 9) {
+        // Add customAttendanceConfig column for custom percentage-point attendance logic
+        final cols = await db.rawQuery('PRAGMA table_info(subjects)');
+        final existing = cols.map((c) => c['name'] as String).toSet();
+        if (!existing.contains('customAttendanceConfig')) {
+          await db.execute('ALTER TABLE subjects ADD COLUMN customAttendanceConfig TEXT');
+        }
+      }
     } catch (e) {
       debugPrint('DatabaseService onUpgrade error: $e');
       rethrow;
@@ -278,6 +287,9 @@ class DatabaseService {
           'locationId': subject.locationId,
           'room': subject.room,
           'block': subject.block,
+          'customAttendanceConfig': subject.customAttendanceConfig != null
+              ? jsonEncode(subject.customAttendanceConfig!.toJson())
+              : null,
         });
       }
 
@@ -294,6 +306,15 @@ class DatabaseService {
       final List<Map<String, dynamic>> maps = await db.query('subjects');
       
       final subjects = maps.map((map) {
+        CustomAttendanceConfig? customConfig;
+        final rawConfig = map['customAttendanceConfig'];
+        if (rawConfig != null && rawConfig is String && rawConfig.isNotEmpty) {
+          try {
+            customConfig = CustomAttendanceConfig.fromJson(
+                jsonDecode(rawConfig) as Map<String, dynamic>);
+          } catch (_) {}
+        }
+
         return Subject(
           id: map['id'] as String,
           acronym: map['acronym'] as String?,
@@ -309,6 +330,7 @@ class DatabaseService {
           locationId: map['locationId'] as String?,
           room: map['room'] as String?,
           block: map['block'] as String?,
+          customAttendanceConfig: customConfig,
         );
       }).toList();
       return subjects;

@@ -9,6 +9,7 @@ import '../../services/database_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/calendar_service.dart';
 import '../../services/system_calendar_service.dart';
+import '../../utils/attendance_math.dart';
 import '../calendar/calendar_utils.dart' hide isSameDay;
 import 'subject_model.dart';
 
@@ -529,6 +530,15 @@ class SubjectProvider with ChangeNotifier {
   }
 
   double getAttendancePercentage(Subject subject) {
+    if (subject.customAttendanceConfig != null &&
+        subject.customAttendanceConfig!.isEnabled) {
+      return AttendanceMath.calculateCustomAttendancePercentage(
+        config: subject.customAttendanceConfig!,
+        records: _attendanceProvider.attendanceRecords
+            .where((r) => r.subjectId == subject.id),
+      );
+    }
+
     final relevantRecords = _attendanceProvider.attendanceRecords
         .where((r) => r.subjectId == subject.id && r.status != AttendanceStatus.cancelled)
         .toList();

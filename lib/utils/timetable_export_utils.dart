@@ -160,6 +160,8 @@ class TimetableExportUtils {
         if (subject.acronym != null && subject.acronym!.trim().isNotEmpty)
           'acronym': subject.acronym!.trim(),
         'schedule': schedule,
+        if (subject.customAttendanceConfig != null)
+          'customAttendanceConfig': subject.customAttendanceConfig!.toJson(),
       };
 
       subjectList.add(item);

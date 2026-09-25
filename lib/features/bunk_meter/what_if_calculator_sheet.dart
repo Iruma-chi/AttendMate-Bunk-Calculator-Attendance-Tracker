@@ -8,6 +8,7 @@ import '../attendance/attendance_model.dart';
 import '../planner/planned_leave_model.dart';
 import '../semester/semester_model.dart';
 import '../subject/subject_model.dart';
+import '../../utils/attendance_math.dart';
 import '../tutorial/tutorial_controller.dart';
 import '../tutorial/tutorial_overlay.dart';
 
@@ -294,32 +295,85 @@ class _WhatIfCalculatorSheetState extends State<WhatIfCalculatorSheet> {
         : widget.semester.targetPercentage;
     final double targetRatio = targetPercentage / 100.0;
 
-    // Target breakdown calculations up to selected horizon
-    final int effectiveCurrentHeld = currentHeld + leaveMissedTotal;
-    final int endHorizonTotalHeld = effectiveCurrentHeld + totalRemaining;
-    final int targetAttendedNeeded = (targetRatio * endHorizonTotalHeld).ceil();
-    final int mustAttend = (targetAttendedNeeded - currentAttended).clamp(0, totalRemaining);
-    final int canBunk = (totalRemaining - mustAttend).clamp(0, totalRemaining);
+    final bool isCustomMode = selectedSubject?.customAttendanceConfig != null &&
+        selectedSubject!.customAttendanceConfig!.isEnabled;
+    final customConfig = selectedSubject?.customAttendanceConfig;
 
-    // Auto-adjust values if MAX is active or if total simulated exceeds total remaining
-    if (_isMaxActive) {
-      _attendNext = mustAttend;
-      _bunkNext = canBunk;
-    } else if ((_attendNext + _bunkNext) > totalRemaining) {
-      _attendNext = _attendNext.clamp(0, totalRemaining);
-      _bunkNext = _bunkNext.clamp(0, totalRemaining - _attendNext);
+    final int mustAttend;
+    final int canBunk;
+    final double currentRatio;
+    final double simulatedRatio;
+    final int simulatedAttended;
+    final int simulatedHeld;
+
+    if (isCustomMode && customConfig != null) {
+      currentRatio = AttendanceMath.calculateCustomAttendancePercentage(
+        config: customConfig,
+        records: widget.recordsBySubject[selectedSubject.id] ?? [],
+      );
+
+      if (currentRatio >= targetPercentage) {
+        final maxBunkable = AttendanceMath.calculateCustomBunkableClasses(
+          currentPercentage: currentRatio,
+          absentAdjustment: customConfig.absentAdjustment,
+          targetPercentage: targetPercentage,
+        );
+        canBunk = (customConfig.absentAdjustment >= 0)
+            ? totalRemaining
+            : maxBunkable.clamp(0, totalRemaining);
+        mustAttend = 0;
+      } else {
+        final needed = AttendanceMath.calculateCustomClassesNeededToReachTarget(
+          currentPercentage: currentRatio,
+          presentAdjustment: customConfig.presentAdjustment,
+          targetPercentage: targetPercentage,
+        );
+        mustAttend = (needed == -1) ? totalRemaining : needed.clamp(0, totalRemaining);
+        canBunk = 0;
+      }
+
+      if (_isMaxActive) {
+        _attendNext = mustAttend;
+        _bunkNext = canBunk;
+      } else if ((_attendNext + _bunkNext) > totalRemaining) {
+        _attendNext = _attendNext.clamp(0, totalRemaining);
+        _bunkNext = _bunkNext.clamp(0, totalRemaining - _attendNext);
+      }
+
+      final rawSim = currentRatio +
+          (_attendNext * customConfig.presentAdjustment) +
+          (_bunkNext * customConfig.absentAdjustment);
+      final roundedSim = (rawSim * 10000).round() / 10000;
+      simulatedRatio = roundedSim.clamp(0.0, 100.0);
+      simulatedAttended = currentAttended + _attendNext;
+      simulatedHeld = currentHeld + _attendNext + _bunkNext;
+    } else {
+      // Target breakdown calculations up to selected horizon
+      final int effectiveCurrentHeld = currentHeld + leaveMissedTotal;
+      final int endHorizonTotalHeld = effectiveCurrentHeld + totalRemaining;
+      final int targetAttendedNeeded = (targetRatio * endHorizonTotalHeld).ceil();
+      mustAttend = (targetAttendedNeeded - currentAttended).clamp(0, totalRemaining);
+      canBunk = (totalRemaining - mustAttend).clamp(0, totalRemaining);
+
+      // Auto-adjust values if MAX is active or if total simulated exceeds total remaining
+      if (_isMaxActive) {
+        _attendNext = mustAttend;
+        _bunkNext = canBunk;
+      } else if ((_attendNext + _bunkNext) > totalRemaining) {
+        _attendNext = _attendNext.clamp(0, totalRemaining);
+        _bunkNext = _bunkNext.clamp(0, totalRemaining - _attendNext);
+      }
+
+      // Simulated totals
+      simulatedAttended = currentAttended + _attendNext;
+      simulatedHeld = effectiveCurrentHeld + _attendNext + _bunkNext;
+
+      currentRatio = effectiveCurrentHeld > 0 ? (currentAttended / effectiveCurrentHeld) * 100 : 100.0;
+      simulatedRatio = simulatedHeld > 0 ? (simulatedAttended / simulatedHeld) * 100 : 100.0;
     }
 
     final bool canIncrementMore = (_attendNext + _bunkNext) < totalRemaining;
-
-    // Simulated totals
-    final int simulatedAttended = currentAttended + _attendNext;
-    final int simulatedHeld = effectiveCurrentHeld + _attendNext + _bunkNext;
-
-    final double currentRatio = effectiveCurrentHeld > 0 ? (currentAttended / effectiveCurrentHeld) * 100 : 100.0;
-    final double simulatedRatio = simulatedHeld > 0 ? (simulatedAttended / simulatedHeld) * 100 : 100.0;
     final double delta = simulatedRatio - currentRatio;
-
     final bool isAboveTarget = simulatedRatio >= targetPercentage;
 
     final tutorialController = Provider.of<TutorialController>(context, listen: false);
@@ -824,7 +878,9 @@ class _WhatIfCalculatorSheetState extends State<WhatIfCalculatorSheet> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'Simulated: $simulatedAttended / $simulatedHeld classes',
+                            isCustomMode
+                                ? 'Simulated: ${simulatedRatio.toStringAsFixed(1)}% (Custom Logic)'
+                                : 'Simulated: $simulatedAttended / $simulatedHeld classes',
                             style: TextStyle(
                               fontSize: rs.font(12),
                               color: isDarkMode ? Colors.white70 : Colors.black87,

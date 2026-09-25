@@ -591,11 +591,38 @@ class _SubjectCardItemState extends State<_SubjectCardItem>
                   ),
                   SizedBox(width: rs.width(12)),
                   Expanded(
-                    child: Text(
-                      subject.name,
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: rs.font(15)),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          subject.name,
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: rs.font(15)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (subject.customAttendanceConfig != null &&
+                            subject.customAttendanceConfig!.isEnabled) ...[
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.tune_rounded,
+                                size: rs.scale(11),
+                                color: Colors.blue.shade700,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                'Custom Logic: Base ${subject.customAttendanceConfig!.baselinePercentage.toStringAsFixed(1)}%',
+                                style: TextStyle(
+                                  fontSize: rs.font(10.5),
+                                  color: Colors.blue.shade700,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   IconButton(
