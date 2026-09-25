@@ -1,4 +1,4 @@
-name: Build AttendMate APK
+name: Build AttendCompanion APK
 
 on:
   push:
@@ -9,6 +9,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g"
 
     steps:
       - name: Checkout repository
@@ -28,6 +31,12 @@ jobs:
       - name: Get Flutter dependencies
         run: flutter pub get
 
+      - name: Set app name
+        shell: bash
+        run: |
+          sed -i 's/manifestPlaceholders\["appName"\] = "AttendMate"/manifestPlaceholders["appName"] = "AttendCompanion"/' android/app/build.gradle.kts
+          sed -i 's/manifestPlaceholders\["appName"\] = "AttendMate - Debug"/manifestPlaceholders["appName"] = "AttendCompanion"/' android/app/build.gradle.kts
+
       - name: Build debug APK
         run: flutter build apk --debug
 
@@ -44,11 +53,11 @@ jobs:
           fi
 
           mkdir -p "$GITHUB_WORKSPACE/artifacts"
-          cp "$APK_PATH" "$GITHUB_WORKSPACE/artifacts/AttendMate-debug.apk"
+          cp "$APK_PATH" "$GITHUB_WORKSPACE/artifacts/AttendCompanion-debug.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AttendMate-debug-APK
-          path: artifacts/AttendMate-debug.apk
+          name: AttendCompanion-debug-APK
+          path: artifacts/AttendCompanion-debug.apk
           retention-days: 7
