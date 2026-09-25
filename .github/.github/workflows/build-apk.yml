@@ -1,0 +1,54 @@
+name: Build AttendMate APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Build debug APK
+        run: flutter build apk --debug
+
+      - name: Locate APK
+        shell: bash
+        run: |
+          set -e
+
+          APK_PATH="$(find "$GITHUB_WORKSPACE/.." -type f -name 'app-debug.apk' -print -quit)"
+
+          if [ -z "$APK_PATH" ]; then
+            echo "APK was not found."
+            exit 1
+          fi
+
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          cp "$APK_PATH" "$GITHUB_WORKSPACE/artifacts/AttendMate-debug.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AttendMate-debug-APK
+          path: artifacts/AttendMate-debug.apk
+          retention-days: 7
